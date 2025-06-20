@@ -26,82 +26,58 @@ const transformApiResponseToFlowFormat = (apiData) => {
   const records = apiData.res.records;
   console.log(`Processing ${records.length} records from API response`);
   
-  // Process each record
+  // Process each record (should be a single record with collections)
   records.forEach((record, recordIndex) => {
     // Debug first record in detail
     if (recordIndex === 0) {
       console.log('First record structure:', JSON.stringify(record).substring(0, 500));
     }
     
-    // Process each field in the record that might be a path object
+    // Each field in _fields is now an array of objects
+    if (!record._fields || !Array.isArray(record._fields)) {
+      console.warn('Record missing _fields array:', record);
+      return;
+    }
+    
+    // Process each field collection
     for (let i = 0; i < record._fields.length; i++) {
-      const field = record._fields[i];
+      const fieldCollection = record._fields[i];
       
-      // Check if this field is a path object with segments
-      if (field && typeof field === 'object') {
-        // For direct segments array
-        if (Array.isArray(field.segments)) {
-          processSegments(field.segments);
-        } 
-        // For nested objects that might contain segments
-        else if (field.start && field.end && field.segments) {
-          processSegments(field.segments);
-        }
+      // Skip if not an array
+      if (!Array.isArray(fieldCollection)) {
+        console.warn(`Field at index ${i} is not an array:`, fieldCollection);
+        continue;
       }
+      
+      // Process each item in the collection
+      fieldCollection.forEach(item => {
+        // Check if this item has segments (a path object)
+        if (item && typeof item === 'object' && item.segments) {
+          processPath(item);
+        }
+      });
     }
   });
   
-  function processSegments(segments) {
-    segments.forEach(segment => {
+  // Process a path object
+  function processPath(path) {
+    if (!path.segments || !Array.isArray(path.segments)) {
+      console.warn('Path missing segments array:', path);
+      return;
+    }
+    
+    // Process each segment in the path
+    path.segments.forEach(segment => {
       const { start, relationship, end } = segment;
       
       if (!start || !end) {
         return;
       }
       
-      // Process start node
-      if (start && start.elementId && !uniqueNodesMap[start.elementId]) {
-        const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
-        
-        const newNode = {
-          id: start.elementId,
-          type: 'circle',
-          position: nodePosition,
-          data: { 
-            label: start.properties?.name || 'Unnamed Node',
-            category: start.labels && start.labels.length > 0 ? start.labels[0] : 'Unknown',
-            alias: start.properties?.alias || '',
-            description: start.properties?.desc || '',
-            radius: 100,
-            properties: start.properties || {}
-          }
-        };
-        
-        uniqueNodesMap[start.elementId] = newNode;
-      }
+      processNode(start);
+      processNode(end);
       
-      // Process end node
-      if (end && end.elementId && !uniqueNodesMap[end.elementId]) {
-        const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
-        
-        const newNode = {
-          id: end.elementId,
-          type: 'circle',
-          position: nodePosition,
-          data: { 
-            label: end.properties?.name || 'Unnamed Node',
-            category: end.labels && end.labels.length > 0 ? end.labels[0] : 'Unknown',
-            alias: end.properties?.alias || '',
-            description: end.properties?.desc || '',
-            radius: 100,
-            properties: end.properties || {}
-          }
-        };
-        
-        uniqueNodesMap[end.elementId] = newNode;
-      }
-      
-      // Add edge
+      // Add edge if we have a relationship
       if (relationship && relationship.elementId && start.elementId && end.elementId) {
         const edgeId = `e-${start.elementId}-${end.elementId}-${relationship.elementId}`;
         
@@ -124,6 +100,28 @@ const transformApiResponseToFlowFormat = (apiData) => {
     });
   }
   
+  // Process and add a node if not already added
+  function processNode(node) {
+    if (node && node.elementId && !uniqueNodesMap[node.elementId]) {
+      const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
+      
+      const newNode = {
+        id: node.elementId,
+        type: 'circle',
+        position: nodePosition,
+        data: { 
+          label: node.properties?.name || 'Unnamed Node',
+          category: node.labels && node.labels.length > 0 ? node.labels[0] : 'Unknown',
+          alias: node.properties?.alias || '',
+          description: node.properties?.desc || '',
+          radius: 100,
+          properties: node.properties || {}
+        }
+      };
+      
+      uniqueNodesMap[node.elementId] = newNode;
+    }
+  }
   
   // Convert the object of unique nodes to an array
   const nodesArray = Object.values(uniqueNodesMap);
@@ -132,7 +130,10 @@ const transformApiResponseToFlowFormat = (apiData) => {
   
   if (nodesArray.length === 0) {
     console.error("Failed to extract any nodes from the API response!");
-    console.log("API Records structure:", JSON.stringify(apiData.res.records[0]).substring(0, 1000));
+    if (records.length > 0 && records[0]._fields.length > 0) {
+      console.log("First field collection size:", records[0]._fields[0]?.length || 0);
+      console.log("First item sample:", JSON.stringify(records[0]._fields[0]?.[0]).substring(0, 500));
+    }
   } else {
     console.log("Sample nodes:", nodesArray.slice(0, 2));
     console.log("Sample edges:", edges.slice(0, 2));
@@ -174,7 +175,7 @@ function App() {
   const [selectedNode, setSelectedNode] = useState(null);
 
   useEffect(() => { 
-    const getAllNodes = `${baseUrl}api/get-home-screen`;
+    const getAllNodes = `${baseUrl}api/get-home-optimized`;
     console.log("Fetching from:", getAllNodes);
     
     fetch(getAllNodes)
@@ -195,13 +196,25 @@ function App() {
           // Check if we have the expected structure
           if (!data.message || !data.res || !data.res.records) {
             console.warn('API response missing expected structure:', data);
-            // Try to use data directly if message/res structure is absent
+            // Try to adapt the data structure if possible
             if (data.records) {
               data = { res: { records: data.records } };
+            } else if (Array.isArray(data)) {
+              data = { res: { records: [{ _fields: [data] }] } };
             } else {
               throw new Error('Unable to find records in API response');
             }
           }
+          
+          // Log structure for debugging
+          console.log('API structure:', {
+            hasMessage: !!data.message,
+            hasRes: !!data.res,
+            hasRecords: !!data.res?.records,
+            recordsCount: data.res?.records?.length || 0,
+            firstRecordStructure: data.res?.records?.length > 0 ? 
+              `Contains ${data.res.records[0]._fields?.length || 0} field collections` : 'No records'
+          });
           
           const transformedData = transformApiResponseToFlowFormat(data);
           console.log("Transformed data:", transformedData);

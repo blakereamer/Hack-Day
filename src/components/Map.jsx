@@ -71,7 +71,7 @@ const Map = ({ nodeData = { nodes: [], edges: [] }, onNodeSelect }) => {
           <div style={{ height: '3px', width: '100%', backgroundColor: 'white', borderRadius: '3px' }}></div>
           <div style={{ height: '3px', width: '100%', backgroundColor: 'white', borderRadius: '3px' }}></div>        </div>
       </div>      {/* New Hamburger Menu */}
-      <HamburgerMenu isOpen={isMenuOpen} onClose={closeMenu} onOpen={openMenu} />
+      <HamburgerMenu isOpen={isMenuOpen} onClose={closeMenu} onOpen={openMenu} nodeData={nodeData} />
 
       {/* Flow diagram with adjusted position to account for the nav bar */}      <div style={{ 
         position: 'absolute', 

@@ -1,6 +1,155 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 
-const HamburgerMenu = ({ isOpen, onClose, onOpen }) => {
+const HamburgerMenu = ({ isOpen, onClose, onOpen, nodeData }) => {
+  // State for cascading dropdowns
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const [selectedArea, setSelectedArea] = useState(null);
+  const [selectedSuite, setSelectedSuite] = useState(null);
+  const [selectedTeam, setSelectedTeam] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [hierarchyData, setHierarchyData] = useState({
+    departments: [],
+    areas: [],
+    suites: [],
+    teams: [],
+    products: [],
+    people: []
+  });
+
+  // Process nodeData to create hierarchy
+  useEffect(() => {
+    if (!nodeData || !nodeData.nodes) return;
+
+    const processedData = {
+      departments: [],
+      areas: [],
+      suites: [],
+      teams: [],
+      products: [],
+      people: []
+    };
+
+    // Group nodes by category
+    nodeData.nodes.forEach(node => {
+      const category = node.data?.category?.toLowerCase();
+      const item = {
+        id: node.id,
+        name: node.data?.label || 'Unknown',
+        alias: node.data?.alias || '',
+        description: node.data?.description || '',
+        properties: node.data?.properties || {}
+      };
+
+      switch(category) {
+        case 'department':
+          processedData.departments.push(item);
+          break;
+        case 'area':
+          processedData.areas.push(item);
+          break;
+        case 'suite':
+          processedData.suites.push(item);
+          break;
+        case 'team':
+          processedData.teams.push(item);
+          break;
+        case 'product':
+          processedData.products.push(item);
+          break;
+        case 'person':
+          processedData.people.push(item);
+          break;
+        default:
+          break;
+      }
+    });
+
+    setHierarchyData(processedData);
+  }, [nodeData]);
+
+  // Reset selections when level changes
+  const handleDepartmentSelect = (department) => {
+    setSelectedDepartment(department);
+    setSelectedArea(null);
+    setSelectedSuite(null);
+    setSelectedTeam(null);
+    setSelectedProduct(null);
+  };
+
+  const handleAreaSelect = (area) => {
+    setSelectedArea(area);
+    setSelectedSuite(null);
+    setSelectedTeam(null);
+    setSelectedProduct(null);
+  };
+
+  const handleSuiteSelect = (suite) => {
+    setSelectedSuite(suite);
+    setSelectedTeam(null);
+    setSelectedProduct(null);
+  };
+
+  const handleTeamSelect = (team) => {
+    setSelectedTeam(team);
+    setSelectedProduct(null);
+  };
+
+  const handleProductSelect = (product) => {
+    setSelectedProduct(product);
+  };
+
+  // Clear all selections
+  const clearSelections = () => {
+    setSelectedDepartment(null);
+    setSelectedArea(null);
+    setSelectedSuite(null);
+    setSelectedTeam(null);
+    setSelectedProduct(null);
+  };
+
+  // Dropdown component
+  const DropdownSection = ({ title, items, selectedItem, onSelect, disabled = false }) => (
+    <div style={{ marginBottom: '20px' }}>
+      <h3 style={{
+        margin: '0 0 8px 0',
+        fontSize: '16px',
+        fontWeight: '600',
+        color: disabled ? '#999' : '#333'
+      }}>
+        {title}
+      </h3>
+      <select
+        value={selectedItem?.id || ''}
+        onChange={(e) => {
+          const selected = items.find(item => item.id === e.target.value);
+          onSelect(selected || null);
+        }}
+        disabled={disabled}
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          border: '2px solid #ddd',
+          borderRadius: '6px',
+          fontSize: '14px',
+          backgroundColor: disabled ? '#f5f5f5' : 'white',
+          color: disabled ? '#999' : '#333',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          outline: 'none',
+          transition: 'border-color 0.2s ease'
+        }}
+        onFocus={(e) => !disabled && (e.target.style.borderColor = '#007bff')}
+        onBlur={(e) => !disabled && (e.target.style.borderColor = '#ddd')}
+      >
+        <option value="">-- Select {title} --</option>
+        {items.map(item => (
+          <option key={item.id} value={item.id}>
+            {item.name} {item.alias && `(${item.alias})`}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <>
       {/* Slide-out menu */}
@@ -18,48 +167,154 @@ const HamburgerMenu = ({ isOpen, onClose, onOpen }) => {
           boxShadow: '2px 0 10px rgba(0, 0, 0, 0.3)',
           padding: '20px'
         }}
-      >
-        {/* Search Section */}
+      >        {/* Navigation Section */}
         <div style={{ marginBottom: '30px' }}>
-          {/* Search Title */}
+          {/* Navigation Title */}
           <h2 style={{
             margin: '0 0 10px 0',
             fontSize: '24px',
             fontWeight: 'bold',
             color: '#333'
           }}>
-            Search
+            Navigate
           </h2>
           
-          {/* Search Description */}
+          {/* Navigation Description */}
           <p style={{
             margin: '0 0 15px 0',
             fontSize: '14px',
             color: '#666',
             lineHeight: '1.4'
           }}>
-            Search person, product, area
+            Browse by department, area, suite, team, product, and people
           </p>
-          
-          {/* Search Bar */}
-          <input
-            type="text"
-            placeholder="Type to search..."
+
+          {/* Clear Selections Button */}
+          <button
+            onClick={clearSelections}
             style={{
-              width: '100%',
-              padding: '12px 16px',
-              border: '2px solid #ddd',
-              borderRadius: '8px',
-              fontSize: '14px',
-              outline: 'none',
-              boxSizing: 'border-box',
-              transition: 'border-color 0.2s ease'
+              padding: '6px 12px',
+              marginBottom: '15px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              backgroundColor: '#f8f9fa',
+              color: '#666',
+              fontSize: '12px',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s ease'
             }}
-            onFocus={(e) => e.target.style.borderColor = '#007bff'}
-            onBlur={(e) => e.target.style.borderColor = '#ddd'}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#e9ecef'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+          >
+            Clear All
+          </button>
+
+          {/* Cascading Dropdowns */}
+          <DropdownSection
+            title="Department"
+            items={hierarchyData.departments}
+            selectedItem={selectedDepartment}
+            onSelect={handleDepartmentSelect}
           />
-        </div>
-        
+
+          <DropdownSection
+            title="Area"
+            items={hierarchyData.areas}
+            selectedItem={selectedArea}
+            onSelect={handleAreaSelect}
+            disabled={!selectedDepartment}
+          />
+
+          <DropdownSection
+            title="Suite"
+            items={hierarchyData.suites}
+            selectedItem={selectedSuite}
+            onSelect={handleSuiteSelect}
+            disabled={!selectedArea}
+          />
+
+          <DropdownSection
+            title="Team"
+            items={hierarchyData.teams}
+            selectedItem={selectedTeam}
+            onSelect={handleTeamSelect}
+            disabled={!selectedSuite}
+          />
+
+          <DropdownSection
+            title="Product"
+            items={hierarchyData.products}
+            selectedItem={selectedProduct}
+            onSelect={handleProductSelect}
+            disabled={!selectedTeam}
+          />
+
+          {/* People Section */}
+          {selectedProduct && (
+            <div style={{ marginTop: '20px' }}>
+              <h3 style={{
+                margin: '0 0 8px 0',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#333'
+              }}>
+                People
+              </h3>
+              <div style={{
+                maxHeight: '150px',
+                overflowY: 'auto',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                padding: '8px'
+              }}>
+                {hierarchyData.people.length > 0 ? (
+                  hierarchyData.people.map(person => (
+                    <div
+                      key={person.id}
+                      style={{
+                        padding: '8px',
+                        borderBottom: '1px solid #eee',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                      onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                    >
+                      <div style={{ fontWeight: '500' }}>{person.name}</div>
+                      {person.alias && <div style={{ fontSize: '12px', color: '#666' }}>{person.alias}</div>}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '8px', color: '#999', fontSize: '14px' }}>
+                    No people found
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Breadcrumb */}
+          {(selectedDepartment || selectedArea || selectedSuite || selectedTeam || selectedProduct) && (
+            <div style={{
+              marginTop: '20px',
+              padding: '10px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '6px',
+              fontSize: '12px',
+              color: '#666'
+            }}>
+              <div style={{ fontWeight: '500', marginBottom: '4px' }}>Current Path:</div>
+              <div>
+                {selectedDepartment?.name}
+                {selectedArea && ` → ${selectedArea.name}`}
+                {selectedSuite && ` → ${selectedSuite.name}`}
+                {selectedTeam && ` → ${selectedTeam.name}`}
+                {selectedProduct && ` → ${selectedProduct.name}`}
+              </div>
+            </div>
+          )}
+        </div>        
         {/* Menu content will go here */}
         
         {/* Close button - positioned relative to menu */}

@@ -50,6 +50,8 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(propEdges?.length ? propEdges : initialEdges);
   const [physicsEnabled, setPhysicsEnabled] = useState(true);
   const [anchorEnabled, setAnchorEnabled] = useState(true);
+  const [showAllNodes, setShowAllNodes] = useState(false);
+  const [nodeLimitCount, setNodeLimitCount] = useState(100);
   
   // New states for filtering
   const [nodeFilters, setNodeFilters] = useState({
@@ -97,75 +99,14 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
     (params) => setEdges((eds) => addEdge(params, eds)),
     [setEdges]
   );
-  
-  // Physics simulation reference
-  const simulationRef = useRef(null);
-  
-  // Force-directed layout with physics
-  useEffect(() => {
-    if (!nodes.length || !physicsEnabled) return;
-    
-    // Stop any existing simulation
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-    }
-    
-    // Find central/anchor node (using the first node by default)
-    const anchorNodeId = nodes[0]?.id;
-    
-    // Configure the physics simulation
-    const simulation = forceSimulation()
-      .nodes(nodes.map(node => ({
-        ...node,
-        x: node.position.x,
-        y: node.position.y,
-        // Fix the anchor node in place at the center if anchor is enabled
-        fx: anchorEnabled && node.id === anchorNodeId ? window.innerWidth / 2 : undefined,
-        fy: anchorEnabled && node.id === anchorNodeId ? window.innerHeight / 2 : undefined
-      })))
-      .force('charge', forceManyBody().strength(-5000)) // Significantly increased repulsion between nodes
-      .force('center', forceCenter(window.innerWidth / 2, window.innerHeight / 2).strength(0.02)) // Further reduced center attraction
-      .force('collision', forceCollide().radius(node => 200).strength(0.9)) // Increased collision radius and strength
-      .force('link', forceLink(edges.map(edge => ({ 
-        source: nodes.findIndex(node => node.id === edge.source),
-        target: nodes.findIndex(node => node.id === edge.target)
-      }))).id(d => d.index).distance(500).strength(0.2)) // Significantly increased distance, reduced strength
-      .alphaDecay(0.008) // Slightly slowed cooling to allow nodes to find better positions
-      .on('tick', () => {
-        // Update node positions on each tick
-        setNodes(currentNodes => 
-          currentNodes.map((node, i) => {
-            const simNode = simulation.nodes()[i];
-            if (!simNode) return node;
-            
-            return {
-              ...node,
-              position: {
-                x: simNode.x,
-                y: simNode.y
-              }
-            };
-          })
-        );
-      });
-    
-    // Store the simulation reference
-    simulationRef.current = simulation;
-    
-    // Clean up
-    return () => {
-      if (simulationRef.current) {
-        simulationRef.current.stop();
-      }
-    };
-  }, [nodes.length, edges, physicsEnabled, anchorEnabled, setNodes]);
-  
-  // Filter nodes based on category and search text
+    // Filter nodes based on category and search text, with limit
   const [activeCategories, setActiveCategories] = useState(new Set());
   const [searchText, setSearchText] = useState('');
   
+  // Define filteredNodes first, before it's used in the physics simulation
   const filteredNodes = useMemo(() => {
-    return nodes.filter(node => {
+    // First apply filters
+    const filtered = nodes.filter(node => {
       // Skip filtering if no filters are active
       if (activeCategories.size === 0 && !searchText.trim()) {
         return true;
@@ -182,7 +123,14 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
       
       return categoryMatch && searchMatch;
     });
-  }, [nodes, activeCategories, searchText]);
+    
+    // Apply node limit if needed and not showing all nodes
+    if (!showAllNodes && filtered.length > nodeLimitCount && nodeLimitCount > 0) {
+      return filtered.slice(0, nodeLimitCount);
+    }
+    
+    return filtered;
+  }, [nodes, activeCategories, searchText, showAllNodes, nodeLimitCount]);
   
   // Filter edges to only include those connecting visible nodes
   const filteredEdges = useMemo(() => {
@@ -192,6 +140,80 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
       visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
     );
   }, [edges, filteredNodes]);
+  
+  // Physics simulation reference
+  const simulationRef = useRef(null);
+  
+  // Force-directed layout with physics - only apply to filtered nodes for performance
+  useEffect(() => {
+    // Don't run simulation if no nodes or physics disabled
+    if (!filteredNodes.length || !physicsEnabled) return;
+    
+    // For very large datasets, show a warning
+    if (filteredNodes.length > 200) {
+      console.warn(`Running physics simulation on large dataset (${filteredNodes.length} nodes). This may impact performance.`);
+    }
+    
+    // Stop any existing simulation
+    if (simulationRef.current) {
+      simulationRef.current.stop();
+    }
+    
+    // Find central/anchor node (using the first node by default)
+    const anchorNodeId = filteredNodes[0]?.id;
+    
+    // Get node and edge data for simulation
+    const simulationNodes = filteredNodes.map(node => ({
+      ...node,
+      x: node.position.x,
+      y: node.position.y,
+      // Fix the anchor node in place at the center if anchor is enabled
+      fx: anchorEnabled && node.id === anchorNodeId ? window.innerWidth / 2 : undefined,
+      fy: anchorEnabled && node.id === anchorNodeId ? window.innerHeight / 2 : undefined
+    }));
+    
+    // Filter edges to only include those connecting filtered nodes
+    const visibleNodeIds = new Set(filteredNodes.map(node => node.id));
+    const simulationEdges = filteredEdges.map(edge => ({ 
+      source: simulationNodes.findIndex(node => node.id === edge.source),
+      target: simulationNodes.findIndex(node => node.id === edge.target)
+    })).filter(edge => edge.source !== -1 && edge.target !== -1);
+    
+    // Configure the physics simulation
+    const simulation = forceSimulation(simulationNodes)
+      .force('charge', forceManyBody().strength(-5000))
+      .force('center', forceCenter(window.innerWidth / 2, window.innerHeight / 2).strength(0.02))
+      .force('collision', forceCollide().radius(node => 200).strength(0.9))
+      .force('link', forceLink(simulationEdges).id(d => d.index).distance(500).strength(0.2))
+      .alphaDecay(0.008)
+      .on('tick', () => {
+        // Update node positions on each tick
+        setNodes(currentNodes => 
+          currentNodes.map(node => {
+            // Only update positions for nodes in the simulation
+            const simNodeIndex = simulationNodes.findIndex(n => n.id === node.id);
+            if (simNodeIndex === -1) return node;
+            
+            const simNode = simulationNodes[simNodeIndex];
+            return {
+              ...node,
+              position: {
+                x: simNode.x,
+                y: simNode.y
+              }
+            };
+          })
+        );
+      });
+    
+    // Store the simulation reference
+    simulationRef.current = simulation;
+      // Clean up
+    return () => {
+      if (simulationRef.current) {
+        simulationRef.current.stop();
+      }
+    };  }, [filteredNodes, filteredEdges, physicsEnabled, anchorEnabled, setNodes]);
   
   // Toggle category filter
   const toggleCategoryFilter = (category) => {
@@ -247,16 +269,66 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
           boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px'
+          gap: '10px',
+          maxHeight: '80vh',
+          overflowY: 'auto'
         }}>
+          {/* Node count info */}
+          <div style={{ 
+            fontSize: '12px', 
+            backgroundColor: '#f0f8ff',
+            padding: '5px',
+            borderRadius: '4px',
+            textAlign: 'center',
+            fontWeight: 'bold'
+          }}>
+            Showing {filteredNodes.length} of {nodes.length} nodes
+          </div>
+          
+          {/* Node limit controls */}
           <div>
+            <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '13px' }}>Node Limit</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <input
+                type="range"
+                min="10"
+                max="500"
+                step="10"
+                value={nodeLimitCount}
+                onChange={(e) => setNodeLimitCount(parseInt(e.target.value))}
+                style={{ width: '100%' }}
+                disabled={showAllNodes}
+              />
+              <span style={{ fontSize: '12px', minWidth: '40px' }}>{nodeLimitCount}</span>
+            </div>
+            <div 
+              style={{ 
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px', 
+                background: showAllNodes ? '#e6f7ff' : '#f0f0f0',
+                border: `1px solid ${showAllNodes ? '#91d5ff' : '#d9d9d9'}`,
+                marginBottom: '10px',
+                fontSize: '12px',
+                textAlign: 'center'
+              }} 
+              onClick={() => setShowAllNodes(!showAllNodes)}
+            >
+              {showAllNodes ? 'Showing All Nodes' : 'Limited Nodes'}
+            </div>
+          </div>
+          
+          {/* Physics controls */}
+          <div>
+            <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '13px' }}>Physics</div>
             <div style={{ 
               cursor: 'pointer',
               padding: '4px 8px',
               borderRadius: '4px', 
               background: physicsEnabled ? '#e6f7ff' : '#f0f0f0',
               border: `1px solid ${physicsEnabled ? '#91d5ff' : '#d9d9d9'}`,
-              marginBottom: '5px'
+              marginBottom: '5px',
+              fontSize: '12px'
             }} 
             onClick={() => setPhysicsEnabled(!physicsEnabled)}>
               {physicsEnabled ? '🧲 Physics: ON' : '🧲 Physics: OFF'}
@@ -267,7 +339,8 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
               padding: '4px 8px',
               borderRadius: '4px', 
               background: anchorEnabled ? '#e6f7ff' : '#f0f0f0',
-              border: `1px solid ${anchorEnabled ? '#91d5ff' : '#d9d9d9'}`
+              border: `1px solid ${anchorEnabled ? '#91d5ff' : '#d9d9d9'}`,
+              fontSize: '12px'
             }}
             onClick={() => setAnchorEnabled(!anchorEnabled)}>
               {anchorEnabled ? '📌 Anchor: ON' : '📌 Anchor: OFF'}
@@ -275,7 +348,7 @@ const FlowDiagram = ({ nodes: propNodes, edges: propEdges, onNodeClick }) => {
           </div>
           
           <div style={{ marginTop: '5px' }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Search</div>
+            <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '13px' }}>Search</div>
             <input
               type="text"
               value={searchText}

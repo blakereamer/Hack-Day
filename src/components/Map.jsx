@@ -44,7 +44,7 @@ const Map = ({ nodeData = { nodes: [], edges: [] }, onNodeSelect }) => {
       {/* Black navigation bar */}<div className="nav-bar" style={{ 
         width: '100%', 
         height: '50px', 
-        backgroundColor: 'black', 
+        backgroundColor: '#404040', 
         position: 'absolute', 
         top: 0, 
         left: 0, 

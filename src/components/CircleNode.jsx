@@ -3,12 +3,12 @@ import { Handle, Position } from '@xyflow/react';
 
 // Expanded color scheme for different node types
 const colors = {
-  "Department": "#ff0072",
-  "Area": "#0041d0",
-  "Suite": "#800080",
-  "Team": "#00ff00",
-  "Product": "#0000ff",
-  "Person": "#ff00ff",
+  "Department": "#ff0000",
+  "Area": "#ff8020",
+  "Suite": "#f0c000",
+  "Team": "#3bbb6b",
+  "Product": "#35b5f0",
+  "Person": "#a848ff",
   "Application": "#FFA500",
   "Service": "#8B4513",
   "Database": "#4682B4",
@@ -20,8 +20,27 @@ const colors = {
 const CircleNode = ({ data, isConnectable }) => {
   const label = data?.label || 'Unknown';
   const category = data?.category || 'Unknown';
-  const radius = data?.radius || 75;
   const alias = data?.alias || '';
+  const radius = (() => {
+    // Calculate radius based on category, with a default value
+    switch (category) {
+      case 'Department':
+        return 275;
+      case 'Area':
+        return 225;
+      case 'Suite':
+        return 150;
+      case 'Team':
+        return 125;
+      case 'Product':
+        return 100;
+      case 'Person':
+        return 75;
+      default:
+        return 75; // Fallback radius for unknown categories
+    }
+  })();
+  //data?.radius || 75;
   
   // Determine node color based on category, with fallback to Unknown
   const bgColor = colors[category] || colors.Unknown;
@@ -84,13 +103,25 @@ const CircleNode = ({ data, isConnectable }) => {
         type="target" 
         position={Position.Top} 
         isConnectable={isConnectable}
-        style={{ background: '#fff', width: '10px', height: '10px' }}
+        style={{ 
+          background: 'transparent', 
+          border: 'none', 
+          width: '1px', 
+          height: '1px',
+          top: '50%'
+        }}
       />
       <Handle 
         type="source" 
         position={Position.Bottom} 
         isConnectable={isConnectable}
-        style={{ background: '#fff', width: '10px', height: '10px' }}
+        style={{ 
+          background: 'transparent', 
+          border: 'none', 
+          width: '1px', 
+          height: '1px',
+          bottom: '50%'
+        }}
       />
     </div>
   );

@@ -1,149 +1,112 @@
 import React, { useState, useEffect } from 'react'
 import './App.css'
-import Map from './components/map'
-import NodeInfoBox from './components/NodeinfoBox'
+import Map from './components/Map'
+import NodeInfoBox from './components/NodeInfoBox'
 
-const baseUrl = "http://172.29.173.92:3000/";
+const baseUrl = "http://localhost:3000/";
+//172.29.173.92
 
 // Function to transform Neo4j API data into ReactFlow format
 const transformApiResponseToFlowFormat = (apiData) => {
   console.log('Starting transformation of API data');
-  
+
   // Initialize arrays for nodes and edges
   const nodes = [];
   const edges = [];
-  
+  const formBOutput = []; // Array to store Form B output
+
   // Track unique nodes by ID to avoid duplicates
-  const uniqueNodesMap = {}; // Using a plain object instead of Map to avoid conflicts
-  
+  const uniqueNodesMap = {};
+
   // Return empty data if API response is not in the expected format
   if (!apiData || !apiData.res || !apiData.res.records) {
     console.warn('API data not in expected format:', apiData);
-    return { nodes, edges };
+    return { nodes, edges, formBOutput };
   }
-  
+
   // Process Neo4j records
   const records = apiData.res.records;
   console.log(`Processing ${records.length} records from API response`);
-  
+
   // Process each record
-  records.forEach((record, recordIndex) => {
-    // Debug first record in detail
-    if (recordIndex === 0) {
-      console.log('First record structure:', JSON.stringify(record).substring(0, 500));
-    }
-    
-    // Process each field in the record that might be a path object
-    for (let i = 0; i < record._fields.length; i++) {
-      const field = record._fields[i];
-      
-      // Check if this field is a path object with segments
-      if (field && typeof field === 'object') {
-        // For direct segments array
-        if (Array.isArray(field.segments)) {
-          processSegments(field.segments);
-        } 
-        // For nested objects that might contain segments
-        else if (field.start && field.end && field.segments) {
-          processSegments(field.segments);
-        }
-      }
-    }
-  });
-  
-  function processSegments(segments) {
-    segments.forEach(segment => {
-      const { start, relationship, end } = segment;
-      
-      if (!start || !end) {
-        return;
-      }
-      
-      // Process start node
-      if (start && start.elementId && !uniqueNodesMap[start.elementId]) {
-        const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
-        
-        const newNode = {
-          id: start.elementId,
-          type: 'circle',
-          position: nodePosition,
-          data: { 
-            label: start.properties?.name || 'Unnamed Node',
-            category: start.labels && start.labels.length > 0 ? start.labels[0] : 'Unknown',
-            alias: start.properties?.alias || '',
-            description: start.properties?.desc || '',
-            radius: 100,
-            properties: start.properties || {}
-          }
-        };
-        
-        uniqueNodesMap[start.elementId] = newNode;
-      }
-      
-      // Process end node
-      if (end && end.elementId && !uniqueNodesMap[end.elementId]) {
-        const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
-        
-        const newNode = {
-          id: end.elementId,
-          type: 'circle',
-          position: nodePosition,
-          data: { 
-            label: end.properties?.name || 'Unnamed Node',
-            category: end.labels && end.labels.length > 0 ? end.labels[0] : 'Unknown',
-            alias: end.properties?.alias || '',
-            description: end.properties?.desc || '',
-            radius: 100,
-            properties: end.properties || {}
-          }
-        };
-        
-        uniqueNodesMap[end.elementId] = newNode;
-      }
-      
-      // Add edge
-      if (relationship && relationship.elementId && start.elementId && end.elementId) {
-        const edgeId = `e-${start.elementId}-${end.elementId}-${relationship.elementId}`;
-        
-        // Check if this edge already exists
-        const edgeExists = edges.some(e => e.id === edgeId);
-        
-        if (!edgeExists) {
-          edges.push({
-            id: edgeId,
-            source: start.elementId,
-            target: end.elementId,
-            label: relationship.type || '',
-            data: {
-              type: relationship.type || '',
-              properties: relationship.properties || {}
+  records.forEach((record) => {
+    record._fields.forEach((field) => {
+      if (field && typeof field === 'object' && Array.isArray(field.segments)) {
+        field.segments.forEach((segment) => {
+          const { start, relationship, end } = segment;
+
+          if (start && relationship && end) {
+            // Add to Form B output
+            const formBEntry = `(:${start.labels[0]} ${JSON.stringify(start.properties).replace(/"([^"]+)":/g, '$1:')})-[:${relationship.type} ${JSON.stringify(relationship.properties).replace(/"([^"]+)":/g, '$1:')}]->(:${end.labels[0]} ${JSON.stringify(end.properties).replace(/"([^"]+)":/g, '$1:')})`;
+            formBOutput.push(formBEntry);
+
+            // Process start node
+            if (!uniqueNodesMap[start.elementId]) {
+              const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
+              uniqueNodesMap[start.elementId] = {
+                id: start.elementId,
+                type: 'circle',
+                position: nodePosition,
+                data: {
+                  label: start.properties?.name || 'Unnamed Node',
+                  category: start.labels[0] || 'Unknown',
+                  alias: start.properties?.alias || '',
+                  description: start.properties?.desc || '',
+                  radius: 100,
+                  properties: start.properties || {},
+                },
+              };
             }
-          });
-        }
+
+            // Process end node
+            if (!uniqueNodesMap[end.elementId]) {
+              const nodePosition = calculatePosition(Object.keys(uniqueNodesMap).length);
+              uniqueNodesMap[end.elementId] = {
+                id: end.elementId,
+                type: 'circle',
+                position: nodePosition,
+                data: {
+                  label: end.properties?.name || 'Unnamed Node',
+                  category: end.labels[0] || 'Unknown',
+                  alias: end.properties?.alias || '',
+                  description: end.properties?.desc || '',
+                  radius: 100,
+                  properties: end.properties || {},
+                },
+              };
+            }
+
+            // Add edge
+            const edgeId = `e-${start.elementId}-${end.elementId}-${relationship.elementId}`;
+            if (!edges.some((e) => e.id === edgeId)) {
+              edges.push({
+                id: edgeId,
+                source: start.elementId,
+                target: end.elementId,
+                data: {
+                  type: relationship.type || '',
+                  properties: relationship.properties || {},
+                },
+              });
+            }
+          }
+        });
       }
     });
-  }
-  
-  
+  });
+
   // Convert the object of unique nodes to an array
   const nodesArray = Object.values(uniqueNodesMap);
-  
+
   console.log(`Processed ${nodesArray.length} nodes and ${edges.length} edges from API data`);
-  
-  if (nodesArray.length === 0) {
-    console.error("Failed to extract any nodes from the API response!");
-    console.log("API Records structure:", JSON.stringify(apiData.res.records[0]).substring(0, 1000));
-  } else {
-    console.log("Sample nodes:", nodesArray.slice(0, 2));
-    console.log("Sample edges:", edges.slice(0, 2));
-  }
-  
-  return { nodes: nodesArray, edges };
+  console.log('Form B Output:', formBOutput);
+
+  return { nodes: nodesArray, edges, formBOutput };
 };
 
 // Helper function to calculate node positions in a grid layout
 const calculatePosition = (index) => {
-  const rowSize = 20; // nodes per row
+  const rowSize = 40; // nodes per row
   const xPos = 200 + (index % rowSize) * 250;
   const yPos = 100 + Math.floor(index / rowSize) * 250;
   return { x: xPos, y: yPos };
@@ -233,23 +196,34 @@ function App() {
         title={selectedNode.data?.label || 'Node Details'} 
         category={selectedNode.data?.category || 'Unknown Type'}
         description={selectedNode.data?.description || 'No description available'}
-        position={{ top: '70px', right: '20px' }}
+        position={{ top: '70px', left: '20px' }}
         data={selectedNode.data}
       />
     )}
      
-    <div className="App" style={{ 
-      width: '100vw', 
-      height: '100vh', 
-      margin: 0, 
-      padding: 0, 
-      overflow: 'hidden',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0
-    }}>
+    <div 
+      className="App" 
+      style={{ 
+        width: '100vw', 
+        height: '100vh', 
+        margin: 0, 
+        padding: 0, 
+        overflow: 'hidden',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0
+      }}
+      onClick={(e) => {
+        // Close NodeInfoBox when clicking on the background
+        // Only close if clicking on the ReactFlow pane background (not on nodes, controls, etc.)
+        if (e.target.classList.contains('react-flow__pane') || 
+            e.target.classList.contains('react-flow__renderer')) {
+          setSelectedNode(null);
+        }
+      }}
+    >
       <Map 
         nodeData={nodeData} 
         onNodeSelect={setSelectedNode}
